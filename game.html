@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Play — The Spark of the Dragon-Cat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', sans-serif;
+            background-color: #f0fdf4;
+            background-image: radial-gradient(#bbf7d0 2px, transparent 2px);
+            background-size: 30px 30px;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        
+        /* Game Canvas Styling */
+        #gameCanvas {
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
+            transition: background 1.5s ease-in-out;
+        }
+
+        /* Mobile Controls */
+        .touch-btn {
+            background-color: rgba(255, 255, 255, 0.7);
+            border: 4px solid #4ade80;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #16a34a;
+            user-select: none;
+            cursor: pointer;
+        }
+        .touch-btn:active {
+            background-color: #bbf7d0;
+            transform: scale(0.95);
+        }
+        .action-btn {
+            border-color: #f59e0b;
+            color: #d97706;
+        }
+
+        /* CSS Animations for UI */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-15px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        @keyframes pulse-soft {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.95; }
+        }
+        .animate-pulse-soft { animation: pulse-soft 2s infinite; }
+    </style>
+</head>
+<body class="text-slate-800 p-4 sm:p-8 min-h-screen flex flex-col items-center">
+
+    <div id="game-container" class="hidden w-full max-w-4xl flex-col items-center">
+        <div class="w-full flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border-2 border-slate-200 shadow-sm">
+            <button onclick="location.href='index.html'" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl shadow border-b-4 border-slate-400">⬅ Quit</button>
+            
+            <div id="ui-health" class="hidden flex gap-1 mx-4">
+                <span class="text-2xl" id="heart-1">❤️</span><span class="text-2xl" id="heart-2">❤️</span><span class="text-2xl" id="heart-3">❤️</span>
+            </div>
+
+            <div class="flex flex-col items-end">
+                <div class="text-lg font-bold">Character: <span id="ui-form-name" class="text-orange-500">Fire World</span></div>
+                <div id="ui-form-hint" class="text-sm font-bold text-slate-600">Power: Standard Jump</div>
+            </div>
+        </div>
+
+        <div class="relative w-full">
+            <canvas id="gameCanvas" width="800" height="400" class="w-full bg-sky-100 border-4 border-slate-700"></canvas>
+            <div id="game-overlay" class="absolute inset-0 bg-black bg-opacity-50 hidden flex-col items-center justify-center rounded-xl z-40">
+                <h2 id="game-overlay-title" class="text-5xl font-extrabold text-white mb-6 drop-shadow-lg">Game Over</h2>
+                <button onclick="resetGame(false)" class="px-6 py-3 bg-green-500 hover:bg-green-400 text-white text-xl font-bold rounded-2xl shadow-lg border-b-4 border-green-700 animate-pulse-soft">Play Again</button>
+            </div>
+        </div>
+
+        <!-- Mobile Controls -->
+        <div class="flex justify-between w-full mt-4 sm:hidden px-2">
+            <div class="flex gap-2"><div class="touch-btn" id="btn-left">◀</div><div class="touch-btn" id="btn-right">▶</div></div>
+            <div class="flex gap-2"><div class="touch-btn action-btn hidden" id="btn-melee">⚔️</div><div class="touch-btn action-btn hidden" id="btn-ranged">✨</div><div class="touch-btn" id="btn-jump">▲</div></div>
+        </div>
+        <div class="mt-4 text-slate-500 font-bold text-center sm:block hidden w-full">
+            <p>Use <strong>Left/Right Arrows</strong> to move. <strong>Up Arrow</strong> to jump.</p>
+            <p id="pc-combat-controls" class="hidden text-amber-600 mt-1"><strong>Middle Click</strong> (or Left) for Melee Attack. <strong>Right Click</strong> for Magic Projectile.</p>
+            <p id="pc-space-controls" class="hidden text-purple-600 mt-1"><strong>Left Click</strong> to Ninja-Dash / Teleport. <strong>Middle Click</strong> to Melee.</p>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME ENGINE STATE & VARIABLES ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameModeType = 'classic'; 
+        let pendingGameMode = 'classic';
+        let selectedStartIndex = 0;
+        let lockedCharacter = null;
+        let gameRunning = false;
+        let animationFrameId;
+
+        const keys = { right: false, left: false, up: false };
+        
+        // Globally declared physics & loop vars
+        let hasDoubleJumped = false;
+        let wallJumpTimer = 0;
+        let facingRight = true;
+        let wallGraceTimer = 0;
+        let lastWallDir = 0;
+        let portalCooldown = 0;
+        let hasWonGame = false;
+        
+        let jumpBufferTimer = 0;
+        let groundGraceTimer = 0;
+        
+        let camera = { x: 0, y: 0 };
+        let levelData = [];
+        let enemies = [];
+        let projectiles = [];
+        let currentCheckpointIndex = 0;
+        let masterCheckpoints = [];
+
+        const player = {
+            x: 50, y: 200, width: 30, height: 30,
+            dx: 0, dy: 0, speed: 5, jumpPower: -12, gravity: 0.6,
+            grounded: false, onWall: false, wallDir: 0,
+            form: 'fire', color: '#f97316', canDoubleJump: false,
+            hp: 3, maxHp: 3,
+            invincibleTimer: 0, meleeCooldown: 0, rangedCooldown: 0,
+            isMeleeAttacking: false, meleeDuration: 0
+        };
+
+        const playerForms = {
+            'fire': { color: '#f97316', speed: 5, jumpPower: -12, gravity: 0.6, doubleJump: false },
+            'water': { color: '#0ea5e9', speed: 3.5, jumpPower: -5, gravity: 0.2, doubleJump: false },
+            'earth': { color: '#10b981', speed: 4, jumpPower: -15, gravity: 0.8, doubleJump: false },
+            'wind': { color: '#facc15', speed: 6, jumpPower: -12, gravity: 0.5, doubleJump: true },
+            'space': { color: '#a855f7', speed: 4, jumpPower: -9, gravity: 0.3, doubleJump: false },
+            'frost': { color: '#e0f2fe', speed: 4, jumpPower: -10, gravity: 0.5, doubleJump: true },
+            'flare': { color: '#fef08a', speed: 7, jumpPower: -13, gravity: 0.6, doubleJump: false },
+            'jett': { color: '#475569', speed: 6, jumpPower: -14, gravity: 0.5, doubleJump: true },
+            'spike': { color: '#78350f', speed: 3.5, jumpPower: -14, gravity: 0.9, doubleJump: false }
+        };
+
+        const formColors = {
+            'fire': '#f97316', 'water': '#0ea5e9', 'earth': '#10b981', 'wind': '#facc15', 'space': '#a855f7',
+            'frost': '#e0f2fe', 'flare': '#fef08a', 'jett': '#475569', 'spike': '#78350f'
+        };
+
+        const worldStructure = [
+            { form: 'fire', bg: 'linear-gradient(to bottom, #fed7aa 0%, #fdba74 100%)', parkour: { objs: [{x:0,y:350,w:400,h:50,type:0,color:'#65a30d'},{x:400,y:380,w:90,h:20,type:1,color:'#ef4444'},{x:490,y:350,w:300,h:50,type:0,color:'#65a30d'}], enemies: [{x:550,y:320,w:30,h:30,hp:2,maxHp:2,speed:1.5,dir:-1,type:'slime',patrolDist:100}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#65a30d'},{x:150,y:250,w:100,h:20,type:0,color:'#65a30d'},{x:550,y:200,w:100,h:20,type:0,color:'#65a30d'}], enemies: [{x:600,y:290,w:60,h:60,hp:3,maxHp:3,speed:2,dir:-1,type:'boss',bossType:'fire',projColor:'#ea580c',patrolDist:100,attackCooldown:70}] }, nextForm: 'water', nextBg: 'linear-gradient(to bottom, #0284c7 0%, #0369a1 100%)' },
+            { form: 'water', bg: 'linear-gradient(to bottom, #0284c7 0%, #0369a1 100%)', parkour: { objs: [{x:0,y:350,w:150,h:50,type:0,color:'#fde047'},{x:150,y:100,w:40,h:300,type:0,color:'#0d9488'},{x:150,y:-150,w:600,h:40,type:0,color:'#0d9488'},{x:280,y:150,w:180,h:30,type:0,color:'#0d9488'},{x:280,y:180,w:180,h:20,type:1,color:'#ef4444'},{x:250,y:350,w:500,h:50,type:0,color:'#fde047'},{x:420,y:320,w:80,h:30,type:1,color:'#ef4444'},{x:550,y:-110,w:40,h:280,type:0,color:'#0d9488'},{x:650,y:100,w:40,h:300,type:0,color:'#0d9488'},{x:750,y:-110,w:200,h:40,type:0,color:'#0d9488'},{x:950,y:-110,w:40,h:360,type:0,color:'#0d9488'},{x:750,y:250,w:240,h:40,type:0,color:'#0d9488'},{x:750,y:-70,w:30,h:180,type:1,color:'#ef4444'}], enemies: [{x:350,y:200,w:30,h:30,hp:2,maxHp:2,speed:1,dir:1,type:'swimmer',patrolDist:80},{x:800,y:150,w:30,h:30,hp:2,maxHp:2,speed:1.5,dir:-1,type:'swimmer',patrolDist:60}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#fde047'},{x:200,y:200,w:100,h:20,type:0,color:'#0d9488'},{x:600,y:250,w:100,h:20,type:0,color:'#0d9488'}], enemies: [{x:600,y:290,w:60,h:60,hp:3,maxHp:3,speed:2.5,dir:-1,type:'boss',bossType:'water',projColor:'#22d3ee',patrolDist:150,attackCooldown:50}] }, nextForm: 'earth', nextBg: 'linear-gradient(to bottom, #422006 0%, #78350f 100%)' },
+            { form: 'earth', bg: 'linear-gradient(to bottom, #422006 0%, #78350f 100%)', parkour: { objs: [{x:0,y:350,w:200,h:50,type:0,color:'#422006'},{x:200,y:50,w:50,h:350,type:0,color:'#78350f'},{x:450,y:-100,w:50,h:400,type:0,color:'#78350f'},{x:250,y:150,w:15,h:60,type:1,color:'#ef4444'},{x:435,y:-20,w:15,h:60,type:1,color:'#ef4444'},{x:200,y:-400,w:50,h:350,type:0,color:'#78350f'},{x:250,y:-250,w:15,h:60,type:1,color:'#ef4444'},{x:450,y:-550,w:50,h:350,type:0,color:'#78350f'},{x:435,y:-450,w:15,h:60,type:1,color:'#ef4444'},{x:200,y:380,w:300,h:50,type:1,color:'#ef4444'},{x:500,y:-500,w:300,h:50,type:0,color:'#422006'}], enemies: [{x:550,y:-530,w:30,h:30,hp:2,maxHp:2,speed:1.5,dir:-1,type:'slime',patrolDist:80}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#422006'},{x:150,y:250,w:80,h:20,type:0,color:'#422006'},{x:650,y:150,w:80,h:20,type:0,color:'#422006'}], enemies: [{x:600,y:290,w:60,h:60,hp:4,maxHp:4,speed:1,dir:-1,type:'boss',bossType:'earth',projColor:'#4ade80',patrolDist:100,attackCooldown:80}] }, nextForm: 'wind', nextBg: 'linear-gradient(to bottom, #bae6fd 0%, #e0f2fe 100%)' },
+            { form: 'wind', bg: 'linear-gradient(to bottom, #bae6fd 0%, #e0f2fe 100%)', parkour: { objs: [{x:0,y:350,w:100,h:40,type:0,color:'#1e293b'},{x:250,y:250,w:40,h:20,type:0,color:'#1e293b'},{x:500,y:150,w:40,h:20,type:0,color:'#1e293b'},{x:700,y:-150,w:20,h:200,type:1,color:'#ef4444'},{x:700,y:200,w:20,h:300,type:1,color:'#ef4444'},{x:750,y:400,w:1000,h:50,type:1,color:'#ef4444'},{x:850,y:150,w:30,h:20,type:0,color:'#1e293b'},{x:1100,y:250,w:30,h:20,type:0,color:'#1e293b'},{x:1350,y:100,w:30,h:20,type:0,color:'#1e293b'},{x:1550,y:-200,w:40,h:450,type:0,color:'#1e293b'},{x:1700,y:250,w:150,h:40,type:0,color:'#1e293b'}], enemies: [{x:950,y:100,w:30,h:30,hp:2,maxHp:2,speed:2,dir:1,type:'flyer',patrolDist:100},{x:1200,y:150,w:30,h:30,hp:2,maxHp:2,speed:2,dir:-1,type:'flyer',patrolDist:100}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#1e293b'},{x:200,y:250,w:60,h:20,type:0,color:'#1e293b'},{x:600,y:200,w:60,h:20,type:0,color:'#1e293b'}], enemies: [{x:600,y:200,w:60,h:60,hp:4,maxHp:4,speed:4,dir:-1,type:'boss',bossType:'wind',projColor:'#fef08a',patrolDist:150,attackCooldown:45}] }, nextForm: 'space', nextBg: 'radial-gradient(circle at center, #2e1065 0%, #020617 100%)' },
+            { form: 'space', bg: 'radial-gradient(circle at center, #2e1065 0%, #020617 100%)', parkour: { objs: [{x:0,y:350,w:100,h:50,type:0,color:'#4c1d95'},{x:150,y:-600,w:40,h:1200,type:0,color:'#6d28d9'},{x:190,y:550,w:1600,h:60,type:1,color:'#ef4444'},{x:190,y:-300,w:1600,h:60,type:1,color:'#ef4444'},{x:250,y:350,w:100,h:30,type:0,color:'#4c1d95'},{x:420,y:220,w:80,h:30,type:0,color:'#4c1d95'},{x:400,y:-100,w:40,h:250,type:0,color:'#6d28d9'},{x:550,y:50,w:100,h:30,type:0,color:'#4c1d95'},{x:650,y:-450,w:40,h:650,type:0,color:'#6d28d9'},{x:750,y:350,w:100,h:30,type:0,color:'#4c1d95'},{x:920,y:200,w:80,h:30,type:0,color:'#4c1d95'},{x:1050,y:150,w:30,h:400,type:1,color:'#ef4444'},{x:1200,y:-200,w:30,h:350,type:1,color:'#ef4444'},{x:1320,y:100,w:200,h:30,type:0,color:'#4c1d95'}], enemies: [{x:550,y:20,w:30,h:30,hp:2,maxHp:2,speed:1.5,dir:1,type:'slime',patrolDist:60}] }, boss: { objs: [{x:0,y:380,w:1000,h:50,type:0,color:'#4c1d95'},{x:200,y:250,w:80,h:20,type:0,color:'#4c1d95'},{x:700,y:150,w:80,h:20,type:0,color:'#4c1d95'}], enemies: [{x:700,y:320,w:60,h:60,hp:6,maxHp:6,speed:3,dir:-1,type:'boss',bossType:'grimalkin',projColor:'#f0abfc',patrolDist:200,attackCooldown:50}] }, nextForm: 'frost', nextBg: 'linear-gradient(to bottom, #bae6fd 0%, #e0f2fe 100%)' },
+            { form: 'frost', bg: 'linear-gradient(to bottom, #bae6fd 0%, #e0f2fe 100%)', parkour: { objs: [{x:0,y:350,w:250,h:50,type:0,color:'#7dd3fc'},{x:250,y:400,w:600,h:50,type:1,color:'#3b82f6'},{x:350,y:250,w:60,h:20,type:0,color:'#7dd3fc'},{x:550,y:150,w:60,h:20,type:0,color:'#7dd3fc'},{x:850,y:350,w:300,h:50,type:0,color:'#7dd3fc'}], enemies: [{x:900,y:320,w:30,h:30,hp:3,maxHp:3,speed:2,dir:-1,type:'slime',patrolDist:60}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#7dd3fc'},{x:150,y:250,w:100,h:20,type:0,color:'#7dd3fc'},{x:550,y:200,w:100,h:20,type:0,color:'#7dd3fc'}], enemies: [{x:600,y:250,w:80,h:100,hp:6,maxHp:6,speed:1.5,dir:-1,type:'boss',bossType:'ice',projColor:'#bae6fd',patrolDist:120,attackCooldown:60}] }, nextForm: 'flare', nextBg: 'linear-gradient(to bottom, #fef08a 0%, #fde047 100%)' },
+            { form: 'flare', bg: 'linear-gradient(to bottom, #fef08a 0%, #fde047 100%)', parkour: { objs: [{x:0,y:350,w:200,h:50,type:0,color:'#facc15'},{x:300,y:300,w:50,h:20,type:0,color:'#facc15'},{x:450,y:200,w:50,h:20,type:0,color:'#facc15'},{x:600,y:100,w:50,h:20,type:0,color:'#facc15'},{x:800,y:350,w:400,h:50,type:0,color:'#facc15'}], enemies: [{x:850,y:320,w:30,h:30,hp:3,maxHp:3,speed:3,dir:1,type:'swimmer',patrolDist:100}] }, boss: { objs: [{x:0,y:350,w:800,h:50,type:0,color:'#fef08a'},{x:200,y:200,w:80,h:20,type:0,color:'#fef08a'},{x:600,y:150,w:80,h:20,type:0,color:'#fef08a'}], enemies: [{x:500,y:50,w:80,h:80,hp:7,maxHp:7,speed:3.5,dir:-1,type:'boss',bossType:'light',projColor:'#fff',patrolDist:200,attackCooldown:40}] }, nextForm: 'jett', nextBg: 'radial-gradient(circle at center, #334155 0%, #0f172a 100%)' },
+            { form: 'jett', bg: 'radial-gradient(circle at center, #334155 0%, #0f172a 100%)', parkour: { objs: [{x:0,y:350,w:150,h:50,type:0,color:'#064e3b'},{x:150,y:-300,w:40,h:800,type:0,color:'#022c22'},{x:250,y:200,w:60,h:20,type:0,color:'#064e3b'},{x:400,y:50,w:60,h:20,type:0,color:'#064e3b'},{x:600,y:-100,w:60,h:20,type:0,color:'#064e3b'},{x:800,y:350,w:300,h:50,type:0,color:'#064e3b'}], enemies: [{x:850,y:320,w:30,h:30,hp:4,maxHp:4,speed:2.5,dir:1,type:'flyer',patrolDist:80}] }, boss: { objs: [{x:0,y:350,w:1000,h:50,type:0,color:'#15803d'},{x:150,y:250,w:80,h:20,type:0,color:'#15803d'},{x:700,y:150,w:80,h:20,type:0,color:'#15803d'}], enemies: [{x:500,y:200,w:100,h:150,hp:8,maxHp:8,speed:1.5,dir:-1,type:'boss',bossType:'plant',projColor:'#22c55e',patrolDist:150,attackCooldown:50}] }, nextForm: null }
+        ];
+
+        // --- VIEW SWITCHING ---
+        function showMenu() {
+            if (document.getElementById('main-menu')) document.getElementById('main-menu').classList.remove('hidden');
+            if (document.getElementById('story-select-menu')) document.getElementById('story-select-menu').classList.add('hidden');
+            if (document.getElementById('story-container')) document.getElementById('story-container').classList.add('hidden');
+            if (document.getElementById('game-container')) {
+                document.getElementById('game-container').classList.add('hidden');
+                document.getElementById('game-container').classList.remove('flex');
+            }
+            if (document.getElementById('game-select-menu')) document.getElementById('game-select-menu').classList.add('hidden');
+            if (document.getElementById('character-select-menu')) document.getElementById('character-select-menu').classList.add('hidden');
+            gameRunning = false;
+        }
+
+        function showStorySelect() {
+            if (document.getElementById('main-menu')) document.getElementById('main-menu').classList.add('hidden');
+            if (document.getElementById('game-select-menu')) document.getElementById('game-select-menu').classList.add('hidden');
+            if (document.getElementById('character-select-menu')) document.getElementById('character-select-menu').classList.add('hidden');
+            if (document.getElementById('story-container')) document.getElementById('story-container').classList.add('hidden');
+            if (document.getElementById('story-select-menu')) {
+                document.getElementById('story-select-menu').classList.remove('hidden');
+                document.getElementById('story-select-menu').classList.add('flex');
+            }
+        }
+
+        function openBook(bookNum) {
+            if (document.getElementById('story-select-menu')) {
+                document.getElementById('story-select-menu').classList.add('hidden');
+                document.getElementById('story-select-menu').classList.remove('flex');
+            }
+            if (document.getElementById('story-container')) {
+                document.getElementById('story-container').classList.remove('hidden');
+                document.getElementById('story-container').classList.add('flex');
+            }
+            
+            if (document.getElementById('book-1-content')) document.getElementById('book-1-content').classList.add('hidden');
+            if (document.getElementById('book-2-content')) document.getElementById('book-2-content').classList.add('hidden');
+            
+            if (document.getElementById('book-' + bookNum + '-content')) {
+                document.getElementById('book-' + bookNum + '-content').classList.remove('hidden');
+            }
+            
+            window.scrollTo(0,0);
+        }
+
+        function showGameSelect() {
+            if (document.getElementById('main-menu')) document.getElementById('main-menu').classList.add('hidden');
+            if (document.getElementById('character-select-menu')) document.getElementById('character-select-menu').classList.add('hidden');
+            if (document.getElementById('game-select-menu')) document.getElementById('game-select-menu').classList.remove('hidden');
+        }
+
+        function showCharacterSelect(mode) {
+            pendingGameMode = mode;
+            if (document.getElementById('game-select-menu')) document.getElementById('game-select-menu').classList.add('hidden');
+            if (document.getElementById('character-select-menu')) document.getElementById('character-select-menu').classList.remove('hidden');
+        }
+
+        function startGame(mode, startIndex, forceForm = null) {
+            gameModeType = mode;
+            selectedStartIndex = startIndex;
+            lockedCharacter = forceForm; 
+            
+            if (document.getElementById('character-select-menu')) document.getElementById('character-select-menu').classList.add('hidden');
+            if (document.getElementById('game-container')) {
+                document.getElementById('game-container').classList.remove('hidden');
+                document.getElementById('game-container').classList.add('flex');
+            }
+            
+            if (mode === 'fighting') {
+                if (document.getElementById('ui-health')) document.getElementById('ui-health').classList.remove('hidden');
+                if (document.getElementById('btn-melee')) document.getElementById('btn-melee').classList.remove('hidden');
+                if (document.getElementById('btn-ranged')) document.getElementById('btn-ranged').classList.remove('hidden');
+                if (document.getElementById('pc-combat-controls')) document.getElementById('pc-combat-controls').classList.remove('hidden');
+            } else {
+                if (document.getElementById('ui-health')) document.getElementById('ui-health').classList.add('hidden');
+                if (document.getElementById('btn-melee')) document.getElementById('btn-melee').classList.add('hidden');
+                if (document.getElementById('btn-ranged')) document.getElementById('btn-ranged').classList.add('hidden');
+                if (document.getElementById('pc-combat-controls')) document.getElementById('pc-combat-controls').classList.add('hidden');
+            }
+
+            resetGame(true);
+        }
+
+        // --- GAME SYSTEM LOGIC ---
+        function generateWorld() {
+            levelData = []; enemies = []; masterCheckpoints = [];
+            let currentX = 0;
+            for (let i = 0; i < worldStructure.length; i++) {
+                let zone = worldStructure[i];
+                masterCheckpoints.push({ x: currentX + 50, y: 200, form: zone.form, bg: zone.bg });
+                
+                let parkourMaxX = currentX;
+                for (let obj of zone.parkour.objs) {
+                    let shiftedObj = { ...obj, x: obj.x + currentX };
+                    levelData.push(shiftedObj);
+                    if (shiftedObj.x + shiftedObj.w > parkourMaxX) parkourMaxX = shiftedObj.x + shiftedObj.w;
+                }
+                if (gameModeType === 'fighting') {
+                    for (let e of zone.parkour.enemies) { enemies.push({ ...e, x: e.x + currentX, originX: e.x + currentX }); }
+                }
+                
+                currentX = parkourMaxX + 200; 
+                let bossMaxX = currentX;
+                for (let obj of zone.boss.objs) {
+                    let shiftedObj = { ...obj, x: obj.x + currentX };
+                    levelData.push(shiftedObj);
+                    if (shiftedObj.x + shiftedObj.w > bossMaxX) bossMaxX = shiftedObj.x + shiftedObj.w;
+                }
+                if (gameModeType === 'fighting') {
+                    for (let e of zone.boss.enemies) { enemies.push({ ...e, x: e.x + currentX, originX: e.x + currentX }); }
+                }
+                
+                currentX = bossMaxX;
+                if (zone.nextForm) {
+                    if (gameModeType === 'fighting') levelData.push({ x: currentX, y: -5000, w: 20, h: 10000, type: 6, bossType: zone.boss.enemies[0].bossType });
+                    levelData.push({ x: currentX + 50, y: 350, w: 300, h: 50, type: 0, color: '#f8fafc' });
+                    levelData.push({ x: currentX + 180, y: 280, w: 40, h: 60, type: 5, unlockForm: zone.nextForm, nextBg: zone.nextBg, cpIndex: i + 1, collected: false });
+                    levelData.push({ x: currentX + 280, y: -5000, w: 20, h: 10000, type: 8, reqCpIndex: i + 1 });
+                    currentX += 450; 
+                } else {
+                    levelData.push({ x: currentX + 100, y: 250, w: 80, h: 100, type: 7 }); 
+                }
+            }
+        }
+
+        function doTeleport(clientX, clientY) {
+            if (!gameRunning || (player.form !== 'space' && player.form !== 'jett') || portalCooldown > 0) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentZoom = 0.6;
+            const clickX = ((clientX - rect.left) * (canvas.width / rect.width)) / currentZoom + camera.x;
+            const clickY = ((clientY - rect.top) * (canvas.height / rect.height)) / currentZoom + camera.y;
+
+            const dist = Math.hypot(clickX - player.x, clickY - player.y);
+            let targetX = clickX; let targetY = clickY;
+            if (dist > 300) { const ratio = 300 / dist; targetX = player.x + (clickX - player.x) * ratio; targetY = player.y + (clickY - player.y) * ratio; }
+
+            for (let obj of levelData) {
+                if (obj.type === 6) {
+                    let bossAlive = enemies.some(e => e.type === 'boss' && e.bossType === obj.bossType);
+                    if (bossAlive && gameModeType === 'fighting') {
+                        if (player.x < obj.x && targetX > obj.x) targetX = obj.x - player.width - 5;
+                        else if (player.x > obj.x + obj.w && targetX < obj.x + obj.w) targetX = obj.x + obj.w + 5;
+                    }
+                } else if (obj.type === 8 && currentCheckpointIndex < obj.reqCpIndex) {
+                    if (player.x < obj.x && targetX > obj.x) targetX = obj.x - player.width - 5;
+                    else if (player.x > obj.x + obj.w && targetX < obj.x + obj.w) targetX = obj.x + obj.w + 5;
+                }
+            }
+
+            let testRect = { x: targetX - player.width / 2, y: targetY - player.height / 2, w: player.width, h: player.height };
+            for (let obj of levelData) { if ((obj.type === 0 || obj.type === 1) && checkCollision(testRect, obj)) return; }
+
+            if (player.form === 'jett') projectiles.push({ x: player.x, y: player.y, w: 30, h: 30, dx: 0, dy: 0, color: '#94a3b8', isPlayer: true, form: 'smoke', timer: 0, piercing: true, hitEnemies: [] });
+            player.x = targetX - player.width / 2; player.y = targetY - player.height / 2; player.dx = 0; player.dy = 0; portalCooldown = 35; 
+            if (player.form === 'jett') projectiles.push({ x: player.x, y: player.y, w: 30, h: 30, dx: 0, dy: 0, color: '#94a3b8', isPlayer: true, form: 'smoke', timer: 0, piercing: true, hitEnemies: [] });
+        }
+
+        if (document.getElementById('btn-left')) document.getElementById('btn-left').addEventListener('touchstart', (e) => { e.preventDefault(); keys.left = true; });
+        if (document.getElementById('btn-left')) document.getElementById('btn-left').addEventListener('touchend', (e) => { e.preventDefault(); keys.left = false; });
+        if (document.getElementById('btn-right')) document.getElementById('btn-right').addEventListener('touchstart', (e) => { e.preventDefault(); keys.right = true; });
+        if (document.getElementById('btn-right')) document.getElementById('btn-right').addEventListener('touchend', (e) => { e.preventDefault(); keys.right = false; });
+        if (document.getElementById('btn-jump')) document.getElementById('btn-jump').addEventListener('touchstart', (e) => { e.preventDefault(); jump(); });
+        if (document.getElementById('btn-melee')) document.getElementById('btn-melee').addEventListener('touchstart', (e) => { e.preventDefault(); doMeleeAttack(); });
+        if (document.getElementById('btn-ranged')) document.getElementById('btn-ranged').addEventListener('touchstart', (e) => { e.preventDefault(); doRangedAttack(); });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+            if (e.code === 'ArrowUp' || e.code === 'Space') jump();
+            if (gameModeType === 'fighting') { if (e.code === 'KeyZ') doMeleeAttack(); if (e.code === 'KeyX') doRangedAttack(); }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+        });
+
+        if (canvas) {
+            canvas.addEventListener('mousedown', (e) => {
+                e.preventDefault(); 
+                if (e.button === 0) { if (player.form === 'space' || player.form === 'jett') doTeleport(e.clientX, e.clientY); else if (gameModeType === 'fighting') doMeleeAttack(); } 
+                else if (e.button === 1 && gameModeType === 'fighting') doMeleeAttack(); 
+                else if (e.button === 2 && gameModeType === 'fighting') doRangedAttack();
+            });
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+            canvas.addEventListener('touchstart', (e) => { if (player.form === 'space' || player.form === 'jett') { e.preventDefault(); doTeleport(e.touches[0].clientX, e.touches[0].clientY); }});
+        }
+
+        function checkCollision(r1, r2) {
+            const w1 = r1.width !== undefined ? r1.width : r1.w; const h1 = r1.height !== undefined ? r1.height : r1.h;
+            const w2 = r2.width !== undefined ? r2.width : r2.w; const h2 = r2.height !== undefined ? r2.height : r2.h;
+            return (r1.x < r2.x + w2 && r1.x + w1 > r2.x && r1.y < r2.y + h2 && r1.y + h1 > r2.y);
+        }
+
+        function jump() {
+            if (player.form === 'water') { player.dy = player.jumpPower; return; }
+            if (player.grounded) { player.dy = player.jumpPower; player.grounded = false; hasDoubleJumped = false; } 
+            else if (player.onWall || wallGraceTimer > 0) {
+                let activeWallDir = player.onWall ? player.wallDir : lastWallDir;
+                if ((activeWallDir === 1 && keys.right) || (activeWallDir === -1 && keys.left)) { player.dy = player.jumpPower * 0.65; player.dx = 0; player.onWall = false; wallGraceTimer = 0; wallJumpTimer = 5; } 
+                else { player.dy = player.jumpPower * 0.9; player.dx = activeWallDir * -player.speed * (player.form === 'earth' || player.form === 'spike' ? 2.0 : 1.2); player.onWall = false; wallGraceTimer = 0; wallJumpTimer = (player.form === 'earth' || player.form === 'spike') ? 15 : 10; facingRight = activeWallDir === 1 ? false : true; }
+                hasDoubleJumped = false; 
+            } else if (player.canDoubleJump && !hasDoubleJumped) { player.dy = player.jumpPower * 0.8; hasDoubleJumped = true; }
+        }
+
+        function doMeleeAttack() {
+            if (!gameRunning || player.meleeCooldown > 0) return;
+
+            if (player.form === 'jett') {
+                let cloud = projectiles.find(p => p.isPlayer && p.form === 'smoke_cloud');
+                if (cloud && Math.hypot((player.x+player.width/2) - (cloud.x+cloud.w/2), (player.y+player.height/2) - (cloud.y+cloud.h/2)) < cloud.w/2) {
+                    player.meleeDuration = 30; player.meleeCooldown = 60; player.isMeleeAttacking = true;
+                    projectiles.push({ x: cloud.x, y: cloud.y, w: cloud.w, h: cloud.h, dx: 0, dy: 0, color: '#f8fafc', isPlayer: true, form: 'jett_special', timer: 0, piercing: true, hitEnemies: [] });
+                    enemies.forEach(enemy => { if (checkCollision(cloud, enemy)) damageEnemy(enemy, 5); });
+                    cloud.timer = 60; return;
+                }
+            }
+
+            player.isMeleeAttacking = true;
+            let attackDur = 15; let attackCD = 30; let hitW = 30; let hitH = player.height; let dmg = 1;
+
+            if (player.form === 'earth') { hitW = 55; attackDur = 20; attackCD = 40; dmg = 2; player.invincibleTimer = 30; } // Earth: Super Armor!
+            else if (player.form === 'flare') { hitW = 55; attackDur = 20; attackCD = 40; dmg = 2; } 
+            else if (player.form === 'wind' || player.form === 'frost') { attackDur = 6; attackCD = 6; hitW = 45; } 
+            else if (player.form === 'water') { attackDur = 12; attackCD = 25; hitW = 35; } 
+            else if (player.form === 'spike') { 
+                attackDur = 25; attackCD = 40; hitW = 60; dmg = 3; 
+                if (player.grounded) {
+                    projectiles.push({x: player.x+player.width, y: player.y+player.height-15, w: 30, h: 15, dx: 12, dy: 0, color: '#78350f', isPlayer: true, form: 'spike_quake', timer: 0, piercing: true, hitEnemies: []});
+                    projectiles.push({x: player.x-30, y: player.y+player.height-15, w: 30, h: 15, dx: -12, dy: 0, color: '#78350f', isPlayer: true, form: 'spike_quake', timer: 0, piercing: true, hitEnemies: []});
+                }
+            }
+            else if (player.form === 'space') {
+                attackDur = 15; attackCD = 20; player.meleeDuration = attackDur; player.meleeCooldown = attackCD;
+                for(let i = -1; i <= 1; i++) { projectiles.push({ x: facingRight ? player.x + player.width : player.x - 15, y: player.y + player.height/2 - 25 + (i * 15), w: 15, h: 40, dx: facingRight ? 12 : -12, dy: i * 3, color: player.color, isPlayer: true, form: 'space_slash', timer: 0, piercing: true, hitEnemies: [] }); } return; 
+            } 
+            else if (player.form === 'jett') {
+                attackDur = 15; attackCD = 20; player.meleeDuration = attackDur; player.meleeCooldown = attackCD;
+                projectiles.push({ x: facingRight ? player.x + player.width : player.x - 15, y: player.y + player.height/2 - 25, w: 15, h: 50, dx: facingRight ? 16 : -16, dy: 0, color: '#f8fafc', isPlayer: true, form: 'space_slash', timer: 0, piercing: true, hitEnemies: [] }); return; 
+            }
+
+            player.meleeDuration = attackDur; player.meleeCooldown = attackCD;
+            let hitX = facingRight ? player.x + player.width : player.x - hitW; let hitY = player.y;
+
+            enemies.forEach(enemy => {
+                if (hitX < enemy.x + enemy.w && hitX + hitW > enemy.x && hitY < enemy.y + enemy.h && hitY + hitH > enemy.y) {
+                    damageEnemy(enemy, dmg);
+                    if (player.form === 'flare') enemy.stunTimer = 120; // Flare: Stun enemies!
+                }
+            });
+        }
+
+        function doRangedAttack() {
+            if (!gameRunning || player.rangedCooldown > 0) return;
+
+            let p = {
+                x: facingRight ? player.x + player.width : player.x - 15, y: player.y + player.height/4,
+                w: 15, h: 15, dx: facingRight ? 8 : -8, dy: 0, color: player.color, isPlayer: true, form: player.form, timer: 0, startY: player.y + player.height/4, piercing: false, hitEnemies: []
+            };
+
+            if (player.form === 'water') { player.rangedCooldown = 40; p.w = 12; p.h = 12; } 
+            else if (player.form === 'earth') { player.rangedCooldown = 60; p.w = 20; p.h = 20; p.dy = -4; } 
+            else if (player.form === 'spike') { player.rangedCooldown = 50; p.w = 25; p.h = 25; p.dy = -5; p.color = '#78350f'; p.form = 'spike_boulder'; } 
+            else if (player.form === 'wind') { player.rangedCooldown = 25; p.w = 25; p.h = 10; p.dx = facingRight ? 12 : -12; p.piercing = true; } 
+            else if (player.form === 'space') { player.rangedCooldown = 45; p.w = 18; p.h = 18; } 
+            else if (player.form === 'frost') { 
+                let existingShard = projectiles.find(proj => proj.isPlayer && proj.form === 'frost');
+                if (existingShard) {
+                    existingShard.form = 'frost_explosion'; existingShard.timer = 0;
+                    let oldCX = existingShard.x + existingShard.w/2; let oldCY = existingShard.y + existingShard.h/2;
+                    existingShard.w = 160; existingShard.h = 160; existingShard.x = oldCX - 80; existingShard.y = oldCY - 80;
+                    existingShard.dx = 0; existingShard.dy = 0; existingShard.hitEnemies = []; existingShard.piercing = true;
+                    player.rangedCooldown = 25; return;
+                } else if (!projectiles.some(proj => proj.isPlayer && proj.form === 'frost_explosion')) {
+                    player.rangedCooldown = 10; p.w = 15; p.h = 15; p.color = '#7dd3fc'; p.form = 'frost'; p.piercing = true; 
+                } else { return; }
+            } 
+            else if (player.form === 'flare') { 
+                // --- FLARE'S DOUBLE CLICK SUN ORB & SUPERNOVA ---
+                let existingOrb = projectiles.find(proj => proj.isPlayer && proj.form === 'flare_orb');
+                if (existingOrb) {
+                    existingOrb.form = 'flare_supernova'; existingOrb.timer = 0;
+                    let oldCX = existingOrb.x + existingOrb.w/2; let oldCY = existingOrb.y + existingOrb.h/2;
+                    existingOrb.w = 200; existingOrb.h = 200; existingOrb.x = oldCX - 100; existingOrb.y = oldCY - 100;
+                    existingOrb.dx = 0; existingOrb.dy = 0; existingOrb.hitEnemies = []; existingOrb.piercing = true;
+                    player.rangedCooldown = 25; return;
+                } else if (!projectiles.some(proj => proj.isPlayer && proj.form === 'flare_supernova')) {
+                    player.rangedCooldown = 10; p.w = 20; p.h = 20; p.dx = facingRight ? 8 : -8; p.color = '#fef08a'; p.form = 'flare_orb'; p.piercing = true; 
+                } else { return; }
+                // ------------------------------------------------
+            } 
+            else if (player.form === 'jett') { 
+                let existingBomb = projectiles.find(proj => proj.isPlayer && proj.form === 'jett_bomb');
+                if (existingBomb) {
+                    existingBomb.form = 'smoke_cloud'; existingBomb.timer = 0;
+                    let oldCX = existingBomb.x + existingBomb.w/2; let oldCY = existingBomb.y + existingBomb.h/2;
+                    existingBomb.w = 260; existingBomb.h = 260; existingBomb.x = oldCX - 130; existingBomb.y = oldCY - 130;
+                    existingBomb.dx = 0; existingBomb.dy = 0; existingBomb.hitEnemies = []; existingBomb.piercing = true; 
+                    player.rangedCooldown = 30; return;
+                } else if (!projectiles.some(proj => proj.isPlayer && proj.form === 'smoke_cloud')) {
+                    player.rangedCooldown = 10; p.w = 16; p.h = 16; p.color = '#1e293b'; p.dy = -6; p.dx = facingRight ? 12 : -12; p.form = 'jett_bomb';
+                } else { return; }
+            } else { player.rangedCooldown = 45; }
+
+            projectiles.push(p);
+        }
+
+        function damageEnemy(enemy, amount) {
+            if (enemy.frozenTimer && enemy.frozenTimer > 0) { amount *= 2; enemy.frozenTimer = 0; }
+            enemy.hp -= amount; enemy.x += (facingRight ? 10 : -10);
+        }
+
+        function updateHealthUI() {
+            let html = '';
+            for(let i=1; i<=player.maxHp; i++) { html += `<span class="text-2xl" style="opacity: ${i <= player.hp ? '1' : '0.2'}">❤️</span>`; }
+            if (document.getElementById('ui-health')) document.getElementById('ui-health').innerHTML = html;
+        }
+
+        function damagePlayer() {
+            if (player.invincibleTimer > 0) return;
+            player.hp--; player.invincibleTimer = 60; updateHealthUI();
+            if (player.hp <= 0) gameOver(false); else { player.dy = -5; player.dx = facingRight ? -10 : 10; }
+        }
+
+        function updateCombat() {
+            if (player.meleeCooldown > 0) player.meleeCooldown--;
+            if (player.rangedCooldown > 0) player.rangedCooldown--;
+            if (player.meleeDuration > 0) player.meleeDuration--; else player.isMeleeAttacking = false;
+            if (player.invincibleTimer > 0) player.invincibleTimer--;
+
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i]; p.timer++;
+
+                if (p.form === 'water') { p.y = p.startY + Math.sin(p.timer * 0.3) * 30; } 
+                else if (p.form === 'earth' || p.form === 'jett_bomb' || p.form === 'spike_boulder') { p.dy += 0.4; } 
+                else if (p.form === 'space' && p.isPlayer) {
+                    let nearest = null; let minDist = 300; 
+                    for(let e of enemies) { let d = Math.hypot((e.x+e.w/2) - (p.x+p.w/2), (e.y+e.h/2) - (p.y+p.h/2)); if(d < minDist) { minDist = d; nearest = e; } }
+                    if (nearest) {
+                        let angle = Math.atan2((nearest.y+nearest.h/2) - (p.y+p.h/2), (nearest.x+nearest.w/2) - (p.x+p.w/2));
+                        p.dx += Math.cos(angle) * 0.5; p.dy += Math.sin(angle) * 0.5; let speed = Math.hypot(p.dx, p.dy);
+                        if(speed > 8) { p.dx = (p.dx/speed)*8; p.dy = (p.dy/speed)*8; }
+                    }
+                }
+
+                p.x += p.dx; p.y += p.dy;
+                
+                let hitWall = false;
+                if (p.form !== 'space_slash' && p.form !== 'smoke_cloud' && p.form !== 'jett_special' && p.form !== 'frost_explosion' && p.form !== 'spike_quake' && p.form !== 'fire_burst' && p.form !== 'flare_supernova') {
+                    for (let wall of levelData) { if ((wall.type === 0 || wall.type === 1) && checkCollision(p, wall)) { hitWall = true; break; } }
+                }
+
+                let hitTarget = false;
+                if (p.isPlayer) {
+                    for (let enemy of enemies) {
+                        if (checkCollision(p, enemy)) {
+                            if (!p.hitEnemies) p.hitEnemies = [];
+                            if (!p.hitEnemies.includes(enemy)) {
+                                if (p.form === 'frost_explosion') { enemy.frozenTimer = 180; } 
+                                else if (p.form === 'flare_supernova') { enemy.stunTimer = 180; damageEnemy(enemy, 3); }
+                                else {
+                                    let dmg = (p.form === 'earth' || p.form === 'spike_boulder' || p.form === 'spike_quake' || p.form === 'flare_orb') ? 2 : 1;
+                                    damageEnemy(enemy, dmg); 
+                                    if (p.form === 'water') enemy.x += (p.dx > 0 ? 30 : -30); // Water knockback
+                                    if (p.form === 'wind') enemy.y -= 20; // Wind knockup
+                                }
+                                p.hitEnemies.push(enemy);
+                                if (!p.piercing) hitTarget = true; 
+                            }
+                            if (hitTarget) break;
+                        }
+                    }
+                } else { if (checkCollision(p, player)) { damagePlayer(); hitTarget = true; } }
+
+                if (hitWall || hitTarget || Math.abs(p.x - player.x) > 800 || p.y > 1000) {
+                    if (p.isPlayer && p.form === 'jett') projectiles.push({x: p.x-10, y: p.y-10, w: 40, h: 40, dx:0, dy:0, color: '#94a3b8', isPlayer: true, form: 'smoke', timer: 0, piercing: true, hitEnemies: p.hitEnemies});
+                    if (p.isPlayer && p.form === 'fire' && hitTarget) projectiles.push({x: p.x-15, y: p.y-15, w: 40, h: 40, dx:0, dy:0, color: '#f97316', isPlayer: true, form: 'fire_burst', timer: 0, piercing: true, hitEnemies: p.hitEnemies});
+                    
+                    if (p.form === 'jett_bomb') { if (hitWall) { p.dx = 0; p.dy = 0; p.y -= 1; } } 
+                    else if (p.form !== 'smoke' && p.form !== 'smoke_cloud' && p.form !== 'jett_special' && p.form !== 'frost_explosion' && p.form !== 'spike_quake' && p.form !== 'fire_burst' && p.form !== 'flare_supernova') {
+                        projectiles.splice(i, 1);
+                    }
+                }
+                
+                if (p.form === 'smoke' && p.timer > 15) projectiles.splice(i, 1);
+                if (p.form === 'smoke_cloud' && p.timer > 60) projectiles.splice(i, 1);
+                if (p.form === 'jett_bomb' && p.timer > 300) projectiles.splice(i, 1);
+                if (p.form === 'jett_special' && p.timer > 20) projectiles.splice(i, 1);
+                if (p.form === 'space_slash' && p.timer > 12) projectiles.splice(i, 1);
+                if (p.form === 'frost_explosion' && p.timer > 15) projectiles.splice(i, 1);
+                if (p.form === 'fire_burst' && p.timer > 15) projectiles.splice(i, 1);
+                if (p.form === 'flare_supernova' && p.timer > 20) projectiles.splice(i, 1);
+                if (p.form === 'flare_orb' && p.timer > 150) projectiles.splice(i, 1);
+                if (p.form === 'spike_quake' && p.timer > 40) projectiles.splice(i, 1);
+            }
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+                if (e.hp <= 0) { enemies.splice(i, 1); continue; }
+
+                if (e.frozenTimer > 0) { e.frozenTimer--; if (checkCollision(player, e)) damagePlayer(); continue; }
+                if (e.stunTimer > 0) { e.stunTimer--; continue; }
+
+                if (e.type === 'slime' || e.type === 'flyer' || e.type === 'swimmer') {
+                    e.x += e.speed * e.dir; if (Math.abs(e.x - e.originX) > e.patrolDist) e.dir *= -1;
+                } else if (e.type === 'boss') {
+                    e.x += e.speed * e.dir; if (Math.abs(e.x - e.originX) > e.patrolDist) e.dir *= -1;
+                    if (Math.abs(player.x - e.x) < 800) {
+                        if (e.attackCooldown > 0) e.attackCooldown--;
+                        else {
+                            let projX = e.dir === -1 ? e.x : e.x + e.w; let projY = e.y + e.h/2;
+                            projectiles.push({ x: projX - 10, y: projY - 10, w: 20, h: 20, dx: e.dir === -1 ? -6 : 6, dy: 0, color: e.projColor || '#1e1b4b', isPlayer: false }); e.attackCooldown = 80;
+                        }
+                    }
+                }
+                if (checkCollision(player, e)) damagePlayer();
+            }
+        }
+
+        function setForm(newForm) {
+            player.form = newForm;
+            player.color = formColors[newForm] || '#f97316';
+            player.speed = 5; player.gravity = 0.6; player.jumpPower = -12; player.canDoubleJump = false;
+            let hintText = "";
+            let displayName = newForm.charAt(0).toUpperCase() + newForm.slice(1);
+
+            if (newForm === 'water') { player.gravity = 0.2; player.speed = 3.5; player.jumpPower = -5; hintText = "Water: Swim & High Knockback Bullets!"; } 
+            else if (newForm === 'earth') { player.speed = 4; player.gravity = 0.8; player.jumpPower = -15; hintText = "Earth: Climb Walls & Super Armor Melee!"; } 
+            else if (newForm === 'wind') { player.speed = 6; player.gravity = 0.5; player.canDoubleJump = true; hintText = "Wind: Double Jump & Knock-up Tornadoes!"; } 
+            else if (newForm === 'space') { player.gravity = 0.3; player.speed = 4; player.jumpPower = -9; hintText = "Space: Teleport (Click) & Triple Slashes!"; } 
+            else if (newForm === 'frost') { player.gravity = 0.5; player.jumpPower = -10; player.speed = 4; player.canDoubleJump = true; hintText = "Frost: Double Jump & Ice Bomb (Click x2 to Freeze)!"; }
+            else if (newForm === 'flare') { player.gravity = 0.6; player.jumpPower = -13; player.speed = 7; hintText = "Flare: Super Speed, Stun Melee & Sun Orb (Click x2 to Supernova)!"; }
+            else if (newForm === 'jett') { player.gravity = 0.5; player.jumpPower = -14; player.speed = 6; player.canDoubleJump = true; hintText = "Jett: Teleport, Smoke Bombs (Click x2), Special Attack inside Smoke!"; }
+            else if (newForm === 'spike') { player.gravity = 0.9; player.jumpPower = -14; player.speed = 3.5; hintText = "Spike: Heavy Armor, Double Damage, Earthquake Melee!"; }
+            else { hintText = "Fire: Standard Jump & Exploding Fireballs!"; }
+
+            if(newForm === 'space' || newForm === 'jett') { 
+                if (document.getElementById('pc-space-controls')) document.getElementById('pc-space-controls').classList.remove('hidden'); 
+            } 
+            else { 
+                if (document.getElementById('pc-space-controls')) document.getElementById('pc-space-controls').classList.add('hidden'); 
+            }
+            
+            const uiText = document.getElementById('ui-form-name');
+            if (uiText) {
+                if(newForm === 'frost' || newForm === 'flare' || newForm === 'jett' || newForm === 'spike') { uiText.innerText = displayName; } 
+                else { uiText.innerText = displayName + ' Cinder'; }
+                uiText.className = `font-bold uppercase ${newForm==='fire'?'text-orange-500':newForm==='water'?'text-blue-500':newForm==='earth'?'text-green-500':newForm==='wind'?'text-yellow-500':newForm==='space'?'text-purple-500':newForm==='frost'?'text-cyan-400':newForm==='flare'?'text-yellow-300':newForm==='spike'?'text-amber-800':'text-slate-500'}`;
+            }
+            if (document.getElementById('ui-form-hint')) document.getElementById('ui-form-hint').innerText = hintText;
+        }
+
+        function resetGame(fullReset = false) {
+            if (hasWonGame) { fullReset = true; hasWonGame = false; }
+            if (fullReset) { currentCheckpointIndex = selectedStartIndex; if (gameModeType === 'fighting') { player.maxHp = 3; } }
+            
+            generateWorld();
+            let cp = masterCheckpoints[currentCheckpointIndex];
+            player.x = cp.x; player.y = cp.y; player.dx = 0; player.dy = 0; player.onWall = false; hasDoubleJumped = false; portalCooldown = 0; projectiles = [];
+            
+            if (lockedCharacter) setForm(lockedCharacter); else setForm(cp.form);
+            
+            if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').style.background = cp.bg;
+            if (gameModeType === 'fighting') { player.hp = player.maxHp; updateHealthUI(); }
+            
+            let startZoom = (player.form === 'space' || player.form === 'jett') ? 0.6 : 1.0;
+            camera.x = Math.max(0, player.x - (canvas.width / startZoom) / 3);
+            camera.y = player.y - (canvas.height / startZoom) / 1.5;
+            
+            if (document.getElementById('game-overlay')) document.getElementById('game-overlay').classList.add('hidden');
+            if (!gameRunning) { gameRunning = true; cancelAnimationFrame(animationFrameId); gameLoop(); }
+        }
+
+        function gameOver(win) {
+            gameRunning = false; hasWonGame = win;
+            const overlay = document.getElementById('game-overlay'); const title = document.getElementById('game-overlay-title');
+            if (overlay) { overlay.classList.remove('hidden'); overlay.classList.add('flex'); }
+            if (title) {
+                if (win) { title.innerText = "You Win! All Heroes Unlocked!"; title.className = "text-3xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-yellow-400 to-slate-400 mb-6 drop-shadow-lg text-center"; } 
+                else { title.innerText = "Oh no! Try Again!"; title.className = "text-5xl font-extrabold text-red-500 mb-6 drop-shadow-lg"; }
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            if (portalCooldown > 0) portalCooldown--;
+            if (gameModeType === 'fighting') updateCombat();
+
+            // --- JUMP BUFFERING & COYOTE TIME ---
+            if (jumpBufferTimer > 0) {
+                let jumped = false;
+                if (player.form === 'water') { player.dy = player.jumpPower; jumped = true; }
+                else if (player.grounded || groundGraceTimer > 0) { player.dy = player.jumpPower; player.grounded = false; hasDoubleJumped = false; groundGraceTimer = 0; jumped = true; } 
+                else if (player.onWall || wallGraceTimer > 0) {
+                    let activeWallDir = player.onWall ? player.wallDir : lastWallDir;
+                    if ((activeWallDir === 1 && keys.right) || (activeWallDir === -1 && keys.left)) { player.dy = player.jumpPower * 0.65; player.dx = 0; player.onWall = false; wallGraceTimer = 0; wallJumpTimer = 5; } 
+                    else { player.dy = player.jumpPower * 0.9; player.dx = activeWallDir * -player.speed * (player.form === 'earth' || player.form === 'spike' ? 2.0 : 1.2); player.onWall = false; wallGraceTimer = 0; wallJumpTimer = (player.form === 'earth' || player.form === 'spike') ? 15 : 10; facingRight = activeWallDir === 1 ? false : true; }
+                    hasDoubleJumped = false; jumped = true; 
+                } else if (player.canDoubleJump && !hasDoubleJumped) { player.dy = player.jumpPower * 0.8; hasDoubleJumped = true; jumped = true; }
+                if (jumped) jumpBufferTimer = 0;
+            }
+            if (jumpBufferTimer > 0) jumpBufferTimer--;
+            // ------------------------------------
+
+            if (wallJumpTimer > 0) wallJumpTimer--;
+            else {
+                // --- SMOOTH ACCELERATION & FRICTION ---
+                let accel = player.speed / 4;
+                let friction = 0.75;
+                if (keys.right) { player.dx += accel; facingRight = true; } 
+                else if (keys.left) { player.dx -= accel; facingRight = false; } 
+                else { player.dx *= friction; } 
+                
+                if (player.dx > player.speed) player.dx = player.speed;
+                if (player.dx < -player.speed) player.dx = -player.speed;
+                if (Math.abs(player.dx) < 0.2) player.dx = 0;
+                // --------------------------------------
+            }
+
+            player.x += player.dx; if (player.x < 0) player.x = 0; player.onWall = false; player.wallDir = 0;
+
+            for (let obj of levelData) {
+                if (checkCollision(player, obj)) {
+                    if (obj.type === 0) {
+                        if (player.dx > 0) { player.x = obj.x - player.width; if (!player.grounded) { player.onWall = true; player.wallDir = 1; } }
+                        else if (player.dx < 0) { player.x = obj.x + obj.w; if (!player.grounded) { player.onWall = true; player.wallDir = -1; } }
+                    } else if (obj.type === 1) { 
+                        if(gameModeType === 'fighting') damagePlayer(); else gameOver(false);
+                    } else if (obj.type === 6) { 
+                        let bossAlive = enemies.some(e => e.type === 'boss' && e.bossType === obj.bossType);
+                        if (bossAlive && gameModeType === 'fighting') {
+                            if (player.dx > 0) { player.x = obj.x - player.width; if(!player.grounded){player.onWall=true; player.wallDir=1;} }
+                            else if (player.dx < 0) { player.x = obj.x + obj.w; if(!player.grounded){player.onWall=true; player.wallDir=-1;} }
+                        }
+                    } else if (obj.type === 8) { 
+                        if (currentCheckpointIndex < obj.reqCpIndex) {
+                            if (player.dx > 0) { player.x = obj.x - player.width; if(!player.grounded){player.onWall=true; player.wallDir=1;} }
+                            else if (player.dx < 0) { player.x = obj.x + obj.w; if(!player.grounded){player.onWall=true; player.wallDir=-1;} }
+                        }
+                    } else if (obj.type === 5 && !obj.collected) {
+                        obj.collected = true; currentCheckpointIndex = obj.cpIndex;
+                        if (lockedCharacter) setForm(lockedCharacter); else setForm(obj.unlockForm);
+                        if (document.getElementById('gameCanvas')) document.getElementById('gameCanvas').style.background = obj.nextBg;
+                        if (gameModeType === 'fighting') { player.hp = player.maxHp; updateHealthUI(); }
+                        player.dy = -8;
+                    } else if (obj.type === 7) { gameOver(true); }
+                }
+            }
+
+            if (player.onWall) { wallGraceTimer = 12; lastWallDir = player.wallDir; } else if (wallGraceTimer > 0) wallGraceTimer--;
+
+            if (player.onWall) {
+                if (player.form === 'earth' || player.form === 'spike') player.dy = 0; else if (player.dy > 0) { player.dy += player.gravity * 0.1; if (player.dy > 2.5) player.dy = 2.5; }
+            } else { player.dy += player.gravity; if (player.form === 'water' && player.dy > 4) player.dy = 4; }
+            
+            player.y += player.dy; player.grounded = false;
+
+            for (let obj of levelData) {
+                if (checkCollision(player, obj)) {
+                    if (obj.type === 0) { 
+                        if (player.dy > 0) { player.y = obj.y - player.height; player.dy = 0; player.grounded = true; hasDoubleJumped = false; } else if (player.dy < 0) { player.y = obj.y + obj.h; player.dy = 0; }
+                    } else if (obj.type === 1) {
+                        if(gameModeType === 'fighting') { damagePlayer(); player.dy = -10; } else gameOver(false);
+                    } else if (obj.type === 6) {
+                        let bossAlive = enemies.some(e => e.type === 'boss' && e.bossType === obj.bossType);
+                        if (bossAlive && gameModeType === 'fighting') { if (player.dy > 0) { player.y = obj.y - player.height; player.dy = 0; player.grounded = true; } }
+                    } else if (obj.type === 8) {
+                        if (currentCheckpointIndex < obj.reqCpIndex) { if (player.dy > 0) { player.y = obj.y - player.height; player.dy = 0; player.grounded = true; } }
+                    }
+                }
+            }
+
+            if (player.grounded) groundGraceTimer = 6; else if (groundGraceTimer > 0) groundGraceTimer--;
+
+            if (player.y > canvas.height + 1500) gameOver(false);
+            
+            // --- SMOOTH CAMERA LERP ---
+            let currentZoom = (player.form === 'space' || player.form === 'jett') ? 0.6 : 1.0;
+            let targetCamX = Math.max(0, player.x - (canvas.width / currentZoom) / 3);
+            let targetCamY = player.y - (canvas.height / currentZoom) / 1.5;
+            camera.x += (targetCamX - camera.x) * 0.1;
+            camera.y += (targetCamY - camera.y) * 0.1;
+            // --------------------------
+        }
+
+        function drawCombat() {
+            let t = Date.now();
+            enemies.forEach(e => {
+                if (e.hp <= 0) return;
+                
+                if (e.type === 'slime') {
+                    let squish = Math.sin(t / 150 + e.x) * 4;
+                    ctx.fillStyle = '#4c1d95'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2 + squish/2, e.w/2 + squish/2, e.h/2 - squish/2, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#ef4444'; ctx.fillRect(e.dir === 1 ? e.x + 20 : e.x + 5, e.y + 10 + squish/2, 5, 5);
+                } else if (e.type === 'flyer') {
+                    let flap = Math.sin(t / 80) * 10;
+                    ctx.fillStyle = '#4c1d95'; ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#6d28d9'; ctx.beginPath(); ctx.moveTo(e.x + e.w/2, e.y + e.h/2); ctx.lineTo(e.x - 10, e.y + e.h/2 - flap); ctx.lineTo(e.x, e.y + e.h/2 - flap - 10); ctx.fill(); ctx.beginPath(); ctx.moveTo(e.x + e.w/2, e.y + e.h/2); ctx.lineTo(e.x + e.w + 10, e.y + e.h/2 - flap); ctx.lineTo(e.x + e.w, e.y + e.h/2 - flap - 10); ctx.fill();
+                    ctx.fillStyle = '#ef4444'; ctx.fillRect(e.dir === 1 ? e.x + 20 : e.x + 5, e.y + 10, 5, 5);
+                } else if (e.type === 'swimmer') {
+                    let wag = Math.sin(t / 100) * 8;
+                    ctx.fillStyle = '#4c1d95'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2.5, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#6d28d9'; ctx.beginPath(); ctx.moveTo(e.dir === 1 ? e.x : e.x + e.w, e.y + e.h/2); ctx.lineTo(e.dir === 1 ? e.x - 15 : e.x + e.w + 15, e.y + e.h/2 + wag); ctx.lineTo(e.dir === 1 ? e.x - 15 : e.x + e.w + 15, e.y + e.h/2 - wag); ctx.fill();
+                    ctx.fillStyle = '#ef4444'; ctx.fillRect(e.dir === 1 ? e.x + 20 : e.x + 5, e.y + 10, 5, 5);
+                } else if (e.type === 'boss') {
+                    let floatY = Math.sin(t / 200) * 10; ctx.save(); ctx.translate(0, floatY);
+                    if (e.bossType === 'fire') { ctx.fillStyle = '#ea580c'; ctx.beginPath(); ctx.arc(e.x+e.w/2, e.y+e.h/2, e.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fef08a'; ctx.fillRect(e.dir===1?e.x+40:e.x+10, e.y+15, 10, 10); } 
+                    else if (e.bossType === 'water') { ctx.fillStyle = '#0284c7'; ctx.beginPath(); ctx.ellipse(e.x+e.w/2, e.y+e.h/2, e.w/2, e.h/3, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fef08a'; ctx.fillRect(e.dir===1?e.x+40:e.x+10, e.y+20, 10, 10); } 
+                    else if (e.bossType === 'earth') { ctx.fillStyle = '#14532d'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.fillStyle = '#fef08a'; ctx.fillRect(e.dir===1?e.x+40:e.x+10, e.y+15, 10, 10); } 
+                    else if (e.bossType === 'wind') { ctx.fillStyle = '#ca8a04'; ctx.beginPath(); ctx.moveTo(e.x+e.w/2, e.y); ctx.lineTo(e.x+e.w, e.y+e.h/2); ctx.lineTo(e.x+e.w/2, e.y+e.h); ctx.lineTo(e.x, e.y+e.h/2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(e.dir===1?e.x+35:e.x+15, e.y+25, 10, 10); }
+                    else if (e.bossType === 'ice') { ctx.fillStyle = '#64748b'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.fillStyle = '#7dd3fc'; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x+20, e.y-20); ctx.lineTo(e.x+40, e.y); ctx.fill(); ctx.fillStyle = '#ef4444'; ctx.fillRect(e.dir===1?e.x+50:e.x+20, e.y+20, 10, 10); }
+                    else if (e.bossType === 'light') { ctx.fillStyle = '#fde047'; ctx.beginPath(); ctx.arc(e.x+e.w/2, e.y+e.h/2, e.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(e.dir===1?e.x+60:e.x+20, e.y+40, 8, 0, Math.PI*2); ctx.fill(); }
+                    else if (e.bossType === 'plant') { ctx.fillStyle = '#166534'; ctx.fillRect(e.x, e.y, e.w, e.h); ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(e.x+e.w/2, e.y, e.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.fillRect(e.dir===1?e.x+60:e.x+30, e.y+20, 10, 10); }
+                    else { ctx.fillStyle = '#1e1b4b'; ctx.fillRect(e.x, e.y, e.w, e.h); let flicker = Math.random() * 4; ctx.fillStyle = '#991b1b'; ctx.fillRect(e.x-5, e.y-5 - flicker, e.w+10, 10 + flicker); ctx.fillStyle = '#dc2626'; ctx.fillRect(e.x, e.y-2 - flicker, e.w, 5); ctx.fillStyle = '#fef08a'; ctx.fillRect(e.dir === 1 ? e.x + 40 : e.x + 10, e.y + 20, 10, 10); }
+                    ctx.restore();
+                }
+
+                ctx.fillStyle = '#000'; ctx.fillRect(e.x, e.y - 25, e.w, 10); ctx.fillStyle = '#ef4444'; ctx.fillRect(e.x, e.y - 25, e.w * (e.hp / e.maxHp), 10);
+                if (e.frozenTimer && e.frozenTimer > 0) { ctx.fillStyle = 'rgba(186, 230, 253, 0.6)'; ctx.fillRect(e.x - 5, e.y - 5, e.w + 10, e.h + 10); ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; ctx.fillRect(e.x + 5, e.y + 5, 5, e.h - 10); }
+                if (e.stunTimer && e.stunTimer > 0) { ctx.fillStyle = '#fef08a'; ctx.beginPath(); ctx.arc(e.x + e.w/2 - 10, e.y - 10 + Math.sin(t/100)*5, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(e.x + e.w/2 + 10, e.y - 10 - Math.sin(t/100)*5, 3, 0, Math.PI*2); ctx.fill(); }
+            });
+
+            projectiles.forEach(p => {
+                ctx.fillStyle = p.color;
+                if (p.isPlayer) {
+                    if (p.form === 'earth') { ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeStyle = '#064e3b'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.w, p.h); } 
+                    else if (p.form === 'spike_boulder') { ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#451a03'; ctx.fillRect(p.x+p.w/4, p.y+p.h/4, p.w/2, p.h/2); }
+                    else if (p.form === 'spike_quake') { ctx.beginPath(); ctx.moveTo(p.x, p.y+p.h); ctx.lineTo(p.x+p.w/2, p.y); ctx.lineTo(p.x+p.w, p.y+p.h); ctx.fill(); }
+                    else if (p.form === 'wind') { ctx.beginPath(); ctx.ellipse(p.x + p.w/2, p.y + p.h/2, p.w/2, p.h/2, 0, 0, Math.PI*2); ctx.fill(); } 
+                    else if (p.form === 'frost') { ctx.beginPath(); ctx.moveTo(p.x+p.w/2, p.y); ctx.lineTo(p.x+p.w, p.y+p.h/2); ctx.lineTo(p.x+p.w/2, p.y+p.h); ctx.lineTo(p.x, p.y+p.h/2); ctx.fill(); }
+                    else if (p.form === 'flare_orb') { ctx.fillStyle = '#fef08a'; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/4, 0, Math.PI*2); ctx.fill(); }
+                    else if (p.form === 'jett_bomb') { ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ef4444'; ctx.fillRect(p.x+p.w/2 - 2, p.y - 4, 4, 4); }
+                    else if (p.form === 'smoke') { ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2 + Math.sin(p.timer)*2, 0, Math.PI*2); ctx.fill(); }
+                    else if (p.form === 'smoke_cloud') { ctx.fillStyle = `rgba(71, 85, 105, ${1 - p.timer/60})`; let radius = Math.min((p.timer / 10) * (p.w/2), p.w/2); ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, radius, 0, Math.PI*2); ctx.fill(); }
+                    else if (p.form === 'space') { ctx.beginPath(); ctx.arc(p.x + p.w/2, p.y + p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(p.x + p.w/2 - 2, p.y - 2, 4, p.h + 4); ctx.fillRect(p.x - 2, p.y + p.h/2 - 2, p.w + 4, 4); } 
+                    else if (p.form === 'space_slash') { ctx.fillStyle = p.color; ctx.shadowColor = '#c026d3'; ctx.shadowBlur = 15; ctx.beginPath(); let isRight = p.dx > 0; if (isRight) { ctx.moveTo(p.x, p.y); ctx.quadraticCurveTo(p.x + p.w, p.y + p.h/2, p.x, p.y + p.h); ctx.quadraticCurveTo(p.x + p.w/2, p.y + p.h/2, p.x, p.y); } else { ctx.moveTo(p.x + p.w, p.y); ctx.quadraticCurveTo(p.x, p.y + p.h/2, p.x + p.w, p.y + p.h); ctx.quadraticCurveTo(p.x + p.w/2, p.y + p.h/2, p.x + p.w, p.y); } ctx.fill(); ctx.shadowBlur = 0; } 
+                    else if (p.form === 'jett_special') { ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 4; ctx.beginPath(); let cx = p.x + p.w/2; let cy = p.y + p.h/2; let offset = p.timer * 5; ctx.moveTo(cx - 50 - offset, cy - 50 + offset); ctx.lineTo(cx + 50 + offset, cy + 50 - offset); ctx.moveTo(cx + 50 + offset, cy - 50 - offset); ctx.lineTo(cx - 50 - offset, cy + 50 + offset); ctx.moveTo(cx - 70, cy); ctx.lineTo(cx + 70, cy); ctx.stroke(); ctx.fillStyle = `rgba(248, 250, 252, ${1 - p.timer/20})`; ctx.beginPath(); ctx.arc(cx, cy, 60 + p.timer*2, 0, Math.PI*2); ctx.fill(); }
+                    else if (p.form === 'frost_explosion') { ctx.fillStyle = `rgba(125, 211, 252, ${1 - p.timer/15})`; ctx.beginPath(); ctx.moveTo(p.x+p.w/2, p.y); ctx.lineTo(p.x+p.w, p.y+p.h/2); ctx.lineTo(p.x+p.w/2, p.y+p.h); ctx.lineTo(p.x, p.y+p.h/2); ctx.fill(); }
+                    else if (p.form === 'flare_supernova') { ctx.fillStyle = `rgba(253, 224, 71, ${1 - p.timer/20})`; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = `rgba(255, 255, 255, ${1 - p.timer/20})`; ctx.lineWidth = 6; let cx = p.x+p.w/2, cy = p.y+p.h/2; ctx.beginPath(); ctx.moveTo(cx - p.w/2, cy); ctx.lineTo(cx + p.w/2, cy); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx, cy - p.h/2); ctx.lineTo(cx, cy + p.h/2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - p.w/3, cy - p.h/3); ctx.lineTo(cx + p.w/3, cy + p.h/3); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - p.w/3, cy + p.h/3); ctx.lineTo(cx + p.w/3, cy - p.h/3); ctx.stroke(); }
+                    else if (p.form === 'fire_burst') { ctx.fillStyle = `rgba(249, 115, 22, ${1 - p.timer/15})`; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); }
+                    else { ctx.beginPath(); ctx.arc(p.x + p.w/2, p.y + p.h/2, p.w/2, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+                } else { ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle = '#ef4444'; ctx.fillRect(p.x+2, p.y+2, p.w-4, p.h-4); }
+            });
+
+            if (player.isMeleeAttacking && player.form !== 'space' && player.form !== 'jett' && player.form !== 'spike') {
+                ctx.strokeStyle = player.color; ctx.lineWidth = player.form === 'earth' || player.form === 'flare' ? 8 : 4; ctx.beginPath();
+                let sx = facingRight ? player.x + player.width : player.x; let sy = player.y + player.height/2;
+                let radius = 20; if(player.form === 'earth') radius = 35; if(player.form === 'wind') radius = 25;
+                ctx.arc(sx, sy, radius, facingRight ? -Math.PI/2 : Math.PI/2, facingRight ? Math.PI/2 : Math.PI*1.5); ctx.stroke();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let t = Date.now(); ctx.save();
+            let currentZoom = (player.form === 'space' || player.form === 'jett') ? 0.6 : 1.0; ctx.scale(currentZoom, currentZoom); ctx.translate(-camera.x, -camera.y);
+
+            for (let obj of levelData) {
+                if (obj.type === 5 && !obj.collected) {
+                    ctx.save(); ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2 + Math.sin(t/200)*10); ctx.rotate(t/500); ctx.fillStyle = formColors[obj.unlockForm] || '#fff'; ctx.beginPath(); ctx.moveTo(0, -25); ctx.lineTo(20, 0); ctx.lineTo(0, 25); ctx.lineTo(-20, 0); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+                } else if (obj.type === 6) {
+                    let bossAlive = enemies.some(e => e.type === 'boss' && e.bossType === obj.bossType);
+                    if (bossAlive && gameModeType === 'fighting') { ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h); ctx.fillStyle = '#ef4444'; ctx.font = "30px Arial"; ctx.fillText("🔒", obj.x - 5, 250); }
+                } else if (obj.type === 8) {
+                    if (currentCheckpointIndex < obj.reqCpIndex) { ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h); ctx.fillStyle = '#fff'; ctx.font = "30px Arial"; ctx.fillText("💎", obj.x - 5, 250); }
+                } else if (obj.type === 7) {
+                    ctx.save(); ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2); let pulse = 1 + Math.sin(t/150)*0.1; ctx.scale(pulse, pulse); ctx.rotate(t/500); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.ellipse(0, 0, obj.w/2, obj.h/2, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.rotate(-t/500); ctx.font = `${obj.w}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🏆', 0, 2); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+                    ctx.restore();
+                }
+            }
+
+            // --- DRAW THE PLAYER (the Dragon-Cat hero) ---
+            drawPlayer();
+
+            // --- DRAW ENEMIES, PROJECTILES & MELEE SWINGS ---
+            if (gameModeType === 'fighting') drawCombat();
+            else {
+                // Classic mode has no enemies, but player projectiles/melee can still appear.
+                drawCombat();
+            }
+
+            ctx.restore();
+        }
+
+        function drawPlayer() {
+            const px = player.x, py = player.y, pw = player.width, ph = player.height;
+            const cx = px + pw / 2, cy = py + ph / 2;
+
+            // Flash on/off while invincible after taking a hit.
+            if (player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 5) % 2 === 0) return;
+
+            ctx.save();
+            // Face the direction of travel by mirroring around the player's centre.
+            if (!facingRight) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0); }
+
+            if (player.form === 'spike') {
+                // Spike: sturdy, bulldog-built earth dragon.
+                ctx.fillStyle = player.color;
+                ctx.fillRect(px, py + ph * 0.35, pw, ph * 0.5);          // body
+                ctx.fillRect(cx - 2, py + ph * 0.12, pw * 0.55, ph * 0.4); // head
+                ctx.fillStyle = '#d97706';                                // blunt back spikes
+                for (let i = 0; i < 3; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(px + 4 + i * 7, py + ph * 0.35);
+                    ctx.lineTo(px + 7 + i * 7, py + ph * 0.18);
+                    ctx.lineTo(px + 10 + i * 7, py + ph * 0.35);
+                    ctx.fill();
+                }
+                ctx.fillStyle = '#451a03';                                // legs
+                ctx.fillRect(px + 3, py + ph * 0.85, 5, ph * 0.15);
+                ctx.fillRect(px + pw - 8, py + ph * 0.85, 5, ph * 0.15);
+                ctx.fillStyle = '#fff';                                   // eye
+                ctx.beginPath(); ctx.arc(cx + 6, py + ph * 0.3, 2.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.arc(cx + 7, py + ph * 0.3, 1.2, 0, Math.PI * 2); ctx.fill();
+            } else {
+                // Cinder in any elemental form: cat body + dragon wings/tail, tinted by form colour.
+                ctx.fillStyle = '#10b981';                                // wing (dragon green)
+                ctx.beginPath();
+                ctx.moveTo(cx - 3, cy - 2);
+                ctx.lineTo(px - 6, cy - ph * 0.5);
+                ctx.lineTo(px + 3, cy + 4);
+                ctx.closePath(); ctx.fill();
+
+                ctx.strokeStyle = '#10b981'; ctx.lineWidth = 3;          // tail
+                ctx.beginPath();
+                ctx.moveTo(px + 5, cy + 5);
+                ctx.quadraticCurveTo(px - 9, cy + 7, px - 6, cy - 5);
+                ctx.stroke();
+                ctx.fillStyle = player.color;                            // tail tuft
+                ctx.beginPath(); ctx.arc(px - 6, cy - 5, 3, 0, Math.PI * 2); ctx.fill();
+
+                ctx.fillStyle = player.color;                            // body
+                ctx.beginPath(); ctx.ellipse(cx - 2, cy + 4, pw * 0.42, ph * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.55)';                // belly
+                ctx.beginPath(); ctx.ellipse(cx - 2, cy + 5, pw * 0.25, ph * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+
+                ctx.fillStyle = player.color;                            // head
+                ctx.beginPath(); ctx.arc(cx + 5, cy - 4, ph * 0.33, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();                                         // ears
+                ctx.moveTo(cx + 1, cy - 9); ctx.lineTo(cx - 1, cy - 16); ctx.lineTo(cx + 6, cy - 10); ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(cx + 9, cy - 10); ctx.lineTo(cx + 13, cy - 16); ctx.lineTo(cx + 13, cy - 8); ctx.fill();
+
+                ctx.fillStyle = '#fff';                                  // eyes
+                ctx.beginPath(); ctx.arc(cx + 4, cy - 5, 2.2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx + 10, cy - 5, 2.2, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.arc(cx + 5, cy - 5, 1, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx + 11, cy - 5, 1, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fb7185';                               // nose
+                ctx.beginPath(); ctx.moveTo(cx + 6, cy - 1); ctx.lineTo(cx + 9, cy - 1); ctx.lineTo(cx + 7.5, cy + 1); ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // --- MAIN GAME LOOP ---
+        function gameLoop() {
+            update();
+            draw();
+            if (gameRunning) animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // Read the chosen mode/hero from the URL and start the game.
+        const _p = new URLSearchParams(location.search);
+        const _mode = _p.get('mode') || 'classic';
+        const _start = parseInt(_p.get('start') || '0', 10) || 0;
+        const _form = _p.get('form');
+        startGame(_mode, _start, _form ? _form : null);
+    </script>
+</body>
+</html>

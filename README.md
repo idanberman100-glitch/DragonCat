@@ -6,12 +6,29 @@ his brother Spike) across Classic and Fighting modes.
 
 ## What's in this folder
 
+The game is now split into separate pages, so each one is small and easy to edit
+in Gemini Canvas on its own (and a broken edit in one can't break the others).
+
 | File | What it is |
 | --- | --- |
-| `index.html` | The **working** game + story. This is what gets played and deployed. |
+| `index.html` | The **home menu** — links to the books and the game. |
+| `book1.html` | Book 1 story (text + pictures). |
+| `book2.html` | Book 2 story (text + pictures). |
+| `game.html` | The platformer game (both Classic & Fighting modes — one engine). |
+| `images/` | Put the book pictures here (see `images/README.md`). |
 | `the_spark_of_the_dragon_cat.html` | Idan's **original** file, kept exactly as-is (do not edit). |
-| `server.js` | A tiny web server that serves the game. No extra libraries needed. |
+| `server.js` | A tiny web server that serves the pages. No extra libraries needed. |
 | `package.json` | Tells Railway how to start the app (`npm start`). |
+
+### How the pages connect
+
+- `index.html` → **Story Mode** lists the books → opens `book1.html` / `book2.html`.
+- `index.html` → **Game Mode** → pick a mode and hero → opens
+  `game.html?mode=fighting&start=0&form=fire` (the choice is passed in the link).
+- Every book and the game has a button to go back to `index.html`.
+
+To edit just the story, Idan opens `book1.html` (or `book2.html`) in Canvas.
+To edit the game, he opens `game.html`. The home menu rarely needs changing.
 
 ## What was fixed
 
