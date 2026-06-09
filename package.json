@@ -1,0 +1,12 @@
+{
+  "name": "dragon-cat-story",
+  "version": "1.0.0",
+  "description": "The Spark of the Dragon-Cat — a story and platformer game by Idan",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
