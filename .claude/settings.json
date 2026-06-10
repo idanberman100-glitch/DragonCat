@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(curl -s -o /dev/null -w \"image -> HTTP %{http_code}, %{size_download} bytes\\\\n\" \"http://localhost:4000/images/book1-ch1-cinder.png\")",
-      "Bash(curl -s http://localhost:4000/book1.html)",
-      "Bash(python -c ' *)"
-    ]
-  }
-}
