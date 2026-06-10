@@ -16,6 +16,8 @@ in Gemini Canvas on its own (and a broken edit in one can't break the others).
 | `book2.html` | Book 2 story (text + pictures). |
 | `game.html` | The platformer game (both Classic & Fighting modes — one engine). |
 | `images/` | Put the book pictures here (see `images/README.md`). |
+| `i18n.js` | The language engine (English / Hebrew / Spanish) + the language buttons. |
+| `locales/he.json`, `locales/es.json` | The Hebrew and Spanish translations. |
 | `the_spark_of_the_dragon_cat.html` | Idan's **original** file, kept exactly as-is (do not edit). |
 | `server.js` | A tiny web server that serves the pages. No extra libraries needed. |
 | `package.json` | Tells Railway how to start the app (`npm start`). |
@@ -29,6 +31,26 @@ in Gemini Canvas on its own (and a broken edit in one can't break the others).
 
 To edit just the story, Idan opens `book1.html` (or `book2.html`) in Canvas.
 To edit the game, he opens `game.html`. The home menu rarely needs changing.
+
+## Languages (English / Hebrew / Spanish)
+
+The story works in three languages. There are language buttons (**EN / ES / עב**)
+in the top corner of every story page; the choice is remembered. Hebrew shows
+right-to-left automatically. You can also link straight to a language with
+`?lang=he` or `?lang=es` (e.g. `book1.html?lang=he`).
+
+**How it works (offline translation):** the **English** text stays written
+straight inside the HTML — so Idan keeps writing English in Gemini Canvas like
+always. Each piece of text has a small tag, e.g. `data-i18n="Book1.p1"`. The
+Hebrew and Spanish versions live in `locales/he.json` and `locales/es.json`,
+matched up by those tags. No internet translation service is used.
+
+**Important — keep translations in sync:** if Idan changes an English sentence
+in Canvas, the Hebrew/Spanish for that sentence won't update by itself. Anything
+that doesn't have a translation simply **falls back to English**, so the page
+never breaks — it just shows English for that bit until the translation is added.
+To translate a new line, find its `data-i18n="..."` tag and add the same key with
+the translated text to `locales/he.json` and `locales/es.json`.
 
 ## What was fixed
 
