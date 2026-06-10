@@ -887,42 +887,91 @@
                 ctx.fillStyle = '#000';
                 ctx.beginPath(); ctx.arc(cx + 7, py + ph * 0.3, 1.2, 0, Math.PI * 2); ctx.fill();
             } else {
-                // Cinder in any elemental form: cat body + dragon wings/tail, tinted by form colour.
-                ctx.fillStyle = '#10b981';                                // wing (dragon green)
+                // Cinder in any elemental form: a fluffy kitten with a green dragon
+                // wing, back-scales and a scaly tail. Fur is tinted by the form colour;
+                // the dragon parts stay emerald green like in the storybook.
+                const green = '#10b981', greenDark = '#047857';
+                const cream = 'rgba(255,247,237,0.92)';
+                const bx = cx - 2, by = cy + 5;          // body centre
+                const hx = cx + 6, hy = cy - 5;          // head centre
+                const headR = ph * 0.32;
+
+                // --- Dragon wing (compact, tucked behind the upper back) ---
+                ctx.fillStyle = green;
                 ctx.beginPath();
-                ctx.moveTo(cx - 3, cy - 2);
-                ctx.lineTo(px - 6, cy - ph * 0.5);
-                ctx.lineTo(px + 3, cy + 4);
+                ctx.moveTo(cx - 6, cy - 1);
+                ctx.lineTo(cx - 15, cy - 11);
+                ctx.lineTo(cx - 9, cy - 6);
+                ctx.lineTo(cx - 14, cy - 2);
+                ctx.lineTo(cx - 7, cy + 1);
                 ctx.closePath(); ctx.fill();
-
-                ctx.strokeStyle = '#10b981'; ctx.lineWidth = 3;          // tail
+                ctx.strokeStyle = greenDark; ctx.lineWidth = 1;          // wing ribs
                 ctx.beginPath();
-                ctx.moveTo(px + 5, cy + 5);
-                ctx.quadraticCurveTo(px - 9, cy + 7, px - 6, cy - 5);
+                ctx.moveTo(cx - 7, cy - 1); ctx.lineTo(cx - 14, cy - 10);
+                ctx.moveTo(cx - 7, cy - 1); ctx.lineTo(cx - 13, cy - 2);
                 ctx.stroke();
-                ctx.fillStyle = player.color;                            // tail tuft
-                ctx.beginPath(); ctx.arc(px - 6, cy - 5, 3, 0, Math.PI * 2); ctx.fill();
 
-                ctx.fillStyle = player.color;                            // body
-                ctx.beginPath(); ctx.ellipse(cx - 2, cy + 4, pw * 0.42, ph * 0.32, 0, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = 'rgba(255,255,255,0.55)';                // belly
-                ctx.beginPath(); ctx.ellipse(cx - 2, cy + 5, pw * 0.25, ph * 0.2, 0, 0, Math.PI * 2); ctx.fill();
-
-                ctx.fillStyle = player.color;                            // head
-                ctx.beginPath(); ctx.arc(cx + 5, cy - 4, ph * 0.33, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath();                                         // ears
-                ctx.moveTo(cx + 1, cy - 9); ctx.lineTo(cx - 1, cy - 16); ctx.lineTo(cx + 6, cy - 10); ctx.fill();
+                // --- Short scaly tail curling up, with a fluffy coloured tuft ---
+                ctx.strokeStyle = green; ctx.lineWidth = 3.5;
                 ctx.beginPath();
-                ctx.moveTo(cx + 9, cy - 10); ctx.lineTo(cx + 13, cy - 16); ctx.lineTo(cx + 13, cy - 8); ctx.fill();
+                ctx.moveTo(cx + 2, cy + 8);
+                ctx.quadraticCurveTo(cx - 16, cy + 9, cx - 13, cy + 1);
+                ctx.stroke();
+                ctx.fillStyle = player.color;                            // fluffy tuft
+                ctx.beginPath(); ctx.arc(cx - 13, cy + 1, 3.2, 0, Math.PI * 2); ctx.fill();
 
-                ctx.fillStyle = '#fff';                                  // eyes
-                ctx.beginPath(); ctx.arc(cx + 4, cy - 5, 2.2, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(cx + 10, cy - 5, 2.2, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#000';
-                ctx.beginPath(); ctx.arc(cx + 5, cy - 5, 1, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(cx + 11, cy - 5, 1, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#fb7185';                               // nose
-                ctx.beginPath(); ctx.moveTo(cx + 6, cy - 1); ctx.lineTo(cx + 9, cy - 1); ctx.lineTo(cx + 7.5, cy + 1); ctx.fill();
+                // --- Body + cream belly ---
+                ctx.fillStyle = player.color;
+                ctx.beginPath(); ctx.ellipse(bx, by, pw * 0.40, ph * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = cream;
+                ctx.beginPath(); ctx.ellipse(bx + 1, by + 3, pw * 0.24, ph * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+
+                // --- Green scale ridge along the back ---
+                ctx.fillStyle = green;
+                for (let i = 0; i < 3; i++) {
+                    const rxp = bx - 6 + i * 4, ryp = by - ph * 0.28 + i * 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(rxp, ryp); ctx.lineTo(rxp + 2, ryp - 4); ctx.lineTo(rxp + 4, ryp);
+                    ctx.closePath(); ctx.fill();
+                }
+
+                // --- Head ---
+                ctx.fillStyle = player.color;
+                ctx.beginPath(); ctx.arc(hx, hy, headR, 0, Math.PI * 2); ctx.fill();
+
+                // Ears (outer fur + pink inner)
+                ctx.fillStyle = player.color;
+                ctx.beginPath(); ctx.moveTo(hx - 6, hy - 4); ctx.lineTo(hx - 8, hy - 13); ctx.lineTo(hx - 1, hy - 8); ctx.closePath(); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(hx + 3, hy - 7); ctx.lineTo(hx + 8, hy - 14); ctx.lineTo(hx + 9, hy - 5); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = 'rgba(251,113,133,0.7)';
+                ctx.beginPath(); ctx.moveTo(hx - 5, hy - 6); ctx.lineTo(hx - 6.3, hy - 11); ctx.lineTo(hx - 2.6, hy - 8); ctx.closePath(); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(hx + 4.5, hy - 8); ctx.lineTo(hx + 7, hy - 12); ctx.lineTo(hx + 7.5, hy - 6); ctx.closePath(); ctx.fill();
+
+                // Little green scale patch on the forehead (the storybook detail)
+                ctx.fillStyle = green;
+                ctx.beginPath(); ctx.arc(hx + 1, hy - headR + 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+
+                // Cream muzzle + blush cheeks
+                ctx.fillStyle = cream;
+                ctx.beginPath(); ctx.ellipse(hx + 2, hy + 3, headR * 0.6, headR * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(251,113,133,0.35)';
+                ctx.beginPath(); ctx.arc(hx - 2, hy + 2, 2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(hx + 7, hy + 2, 2, 0, Math.PI * 2); ctx.fill();
+
+                // Big shiny eyes
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(hx, hy - 1, 2.4, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(hx + 6, hy - 1, 2.4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#1f2937';
+                ctx.beginPath(); ctx.arc(hx + 0.5, hy - 1, 1.3, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(hx + 6.5, hy - 1, 1.3, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(hx + 1, hy - 1.7, 0.6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(hx + 7, hy - 1.7, 0.6, 0, Math.PI * 2); ctx.fill();
+
+                // Pink nose
+                ctx.fillStyle = '#fb7185';
+                ctx.beginPath(); ctx.moveTo(hx + 2, hy + 2); ctx.lineTo(hx + 5, hy + 2); ctx.lineTo(hx + 3.5, hy + 4); ctx.closePath(); ctx.fill();
             }
             ctx.restore();
         }
