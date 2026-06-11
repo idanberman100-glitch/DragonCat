@@ -17,6 +17,14 @@ const I18N = {
 const _i18nCache = {};                 // locale id -> loaded JSON
 const _originalHTML = new WeakMap();   // element -> its inline English HTML
 
+// direction:rtl (set via the dir attribute) handles punctuation & inline flow,
+// but text-align stays 'left' unless explicitly overridden.
+(function() {
+  const s = document.createElement('style');
+  s.textContent = 'html[dir="rtl"] { text-align: right; }';
+  (document.head || document.documentElement).appendChild(s);
+})();
+
 function _getByPath(obj, path) {
   return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 }
